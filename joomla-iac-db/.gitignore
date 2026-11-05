@@ -1,0 +1,19 @@
+# Estado y cache local de Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfstate.d/
+crash.log
+.terraform.tfstate.lock.info
+
+# Planes guardados
+tfplan
+*.tfplan
+
+# Valores propios de cada persona (usar terraform.tfvars.example como plantilla)
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+!terraform.tfvars.example
+
+# Se versiona: .terraform.lock.hcl (fija las versiones del provider)

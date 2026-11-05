@@ -1,0 +1,12 @@
+# Estado remoto (buena practica para trabajo en equipo). OPCIONAL en esta actividad.
+# 1. Crear el bucket una vez (ver GUIA, seccion "Estado remoto").
+# 2. Renombrar este archivo a backend.tf y ejecutar: terraform init -migrate-state
+terraform {
+  backend "s3" {
+    bucket       = "CAMBIAR-por-un-bucket-unico"
+    key          = "joomla-iac-db/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true # bloqueo del estado en S3 (Terraform >= 1.10)
+  }
+}

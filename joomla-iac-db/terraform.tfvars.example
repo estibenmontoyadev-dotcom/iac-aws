@@ -1,0 +1,31 @@
+# Copiar a terraform.tfvars:  cp terraform.tfvars.example terraform.tfvars
+# Aqui solo van valores NO secretos. Las contrasenas se entregan por variable de entorno:
+#   export TF_VAR_admin_password='...'   (minimo 12 caracteres)
+
+aws_region   = "us-east-1"
+project_name = "joomla-ecs"
+
+# Red
+vpc_cidr           = "10.2.0.0/16"
+az_count           = 2
+http_allowed_cidrs = ["0.0.0.0/0"]
+
+# Base de datos relacional (RDS MySQL)
+db_instance_class = "db.t4g.micro"
+db_name           = "joomladb"
+db_username       = "joomla_admin"
+db_multi_az       = false
+
+# Base de datos en memoria (ElastiCache Valkey)
+cache_node_type = "cache.t4g.micro"
+
+# Contenedor Joomla (ECS Fargate)
+joomla_image_tag = "6.2-php8.3-apache"
+task_cpu         = 512
+task_memory      = 1024
+desired_count    = 1
+
+# Sitio Joomla
+site_name      = "Sitio Joomla IaC - Contenedores y BD"
+admin_username = "admin_itm"
+admin_email    = "CAMBIAR@correo.itm.edu.co"

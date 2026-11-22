@@ -19,4 +19,4 @@ else
   echo "[itm] Joomla aun no esta instalado: se omite la sincronizacion"
 fi
 
-exec apache2-foreground-roto "$@"
+exec apache2-foreground "$@"

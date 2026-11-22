@@ -1,0 +1,8 @@
+# Los valores NO secretos del ambiente SI se versionan (el pipeline los necesita);
+# la regla global *.tfvars del repositorio los ignoraria.
+!infra/env/*.tfvars
+
+# Salidas locales de Terraform y de los pipelines
+**/.terraform/
+tfplan
+plan.txt

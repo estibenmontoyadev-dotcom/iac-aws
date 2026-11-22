@@ -53,6 +53,8 @@ Resumen: `bootstrap` en local -> variables y entorno `production` en GitHub -> P
   aplicacion. Un cambio de variables de entorno hecho por Terraform llega al servicio en el siguiente
   despliegue de la aplicacion (o con *Run workflow* manual).
 
+- **Arranque autorreparable.** El contenedor arranca con un script que envuelve el entrypoint oficial: si el instalador no puede borrar `installation/` en EFS (NFS), limpia y continúa; y escribe las opciones de Valkey en `configuration.php` porque `config:set` no admite esas opciones en Joomla 6.2.
+
 ## Limitaciones conocidas
 
 - Sin HTTPS (el ALB atiende HTTP); para produccion, certificado de ACM y listener 443.

@@ -1,16 +1,56 @@
 locals {
-  # Joomla lee estos comandos al terminar su instalacion automatica (imagen oficial,
-  # variable JOOMLA_CLI_COMMANDS) y deja sesiones y cache en ElastiCache (Valkey).
-  joomla_cli_commands = join(" ", [
-    "config:set",
-    "session_handler=redis",
-    "session_redis_server_host=${var.cache_host}",
-    "session_redis_server_port=${var.cache_port}",
-    "caching=1",
-    "cache_handler=redis",
-    "redis_server_host=${var.cache_host}",
-    "redis_server_port=${var.cache_port}",
-  ])
+  # Arranque del contenedor. Envuelve el entrypoint oficial de Joomla para tres cosas:
+  #  1) Con el sitio en EFS (NFS), el instalador no logra borrar la carpeta installation/ y el entrypoint
+  #     lo trata como fallo, dejando una marca que bloquea los reinicios. Si configuration.php ya existe,
+  #     se limpian esas dos carpetas y se continua.
+  #  2) Joomla 6.2 no admite "config:set" para las opciones de Redis (no existen en configuration.php),
+  #     asi que sesiones y cache en Valkey se escriben directamente en configuration.php, una sola vez.
+  #  3) Si la imagen del pipeline trae el comando apache2-itm-foreground, se usa (sincroniza el codigo propio).
+  entrypoint_script = <<-EOT
+    set -u
+    WEB=/var/www/html
+    /entrypoint.sh apache2ctl configtest
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      if [ -s "$WEB/configuration.php" ]; then
+        echo "[itm] La instalacion termino con un error recuperable (rc=$rc): limpiando y continuando"
+        rm -rf "$WEB/installation"
+        rmdir "$WEB/.joomla-initializing" 2>/dev/null || true
+      else
+        echo "[itm] La inicializacion fallo y no hay configuration.php (rc=$rc)"
+        exit "$rc"
+      fi
+    fi
+    if [ -s "$WEB/configuration.php" ] && ! grep -q "session_redis_server_host" "$WEB/configuration.php"; then
+      echo "[itm] Configurando sesiones y cache de Joomla en Valkey"
+      chmod 644 "$WEB/configuration.php"
+      php <<'PHP'
+    <?php
+    $f = '/var/www/html/configuration.php';
+    $s = file_get_contents($f);
+    $host = getenv('CACHE_HOST');
+    $port = (int) getenv('CACHE_PORT');
+    foreach (['session_handler' => "'redis'", 'caching' => '1', 'cache_handler' => "'redis'"] as $k => $v) {
+        $s = preg_replace('/public \$' . $k . ' = .*;/', 'public $' . $k . ' = ' . $v . ';', $s, 1);
+    }
+    $new = ['session_redis_server_host' => "'$host'", 'session_redis_server_port' => $port, 'session_redis_server_auth' => "''",
+            'session_redis_server_db' => 0, 'session_redis_persist' => 1, 'redis_server_host' => "'$host'",
+            'redis_server_port' => $port, 'redis_server_auth' => "''", 'redis_server_db' => 0, 'redis_persist' => 1];
+    $add = '';
+    foreach ($new as $k => $v) {
+        if (strpos($s, 'public $' . $k . ' ') === false) { $add .= "\tpublic \$$k = $v;\n"; }
+    }
+    $s = preg_replace('/\}\s*$/', $add . "}\n", $s);
+    file_put_contents($f, $s);
+    PHP
+      chmod 444 "$WEB/configuration.php"
+      chown www-data:www-data "$WEB/configuration.php"
+    fi
+    if [ -x /usr/local/bin/apache2-itm-foreground ]; then
+      exec /entrypoint.sh apache2-itm-foreground
+    fi
+    exec /entrypoint.sh apache2-foreground
+  EOT
 }
 
 # ---------- Logs ----------
@@ -151,6 +191,8 @@ resource "aws_ecs_task_definition" "joomla" {
       image     = var.container_image
       essential = true
 
+      entryPoint = ["/bin/bash", "-c", local.entrypoint_script]
+
       portMappings = [
         {
           containerPort = 80
@@ -175,7 +217,8 @@ resource "aws_ecs_task_definition" "joomla" {
         { name = "JOOMLA_ADMIN_USER", value = "Administrador" },
         { name = "JOOMLA_ADMIN_USERNAME", value = var.admin_username },
         { name = "JOOMLA_ADMIN_EMAIL", value = var.admin_email },
-        { name = "JOOMLA_CLI_COMMANDS", value = local.joomla_cli_commands },
+        { name = "CACHE_HOST", value = var.cache_host },
+        { name = "CACHE_PORT", value = tostring(var.cache_port) },
       ]
 
       # Las contrasenas se inyectan desde Secrets Manager, nunca como texto plano

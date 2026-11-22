@@ -1,0 +1,13 @@
+# Copiar a terraform.tfvars:  cp terraform.tfvars.example terraform.tfvars
+aws_region   = "us-east-1"
+project_name = "joomla-cicd" # igual que en infra/env/prod.tfvars
+
+github_owner = "estibenmontoyadev-dotcom"
+github_repo  = "iac-aws"
+main_branch  = "main"
+
+# false si la cuenta ya tiene el proveedor OIDC de GitHub (AWS admite solo uno por cuenta)
+create_github_oidc_provider = true
+
+# Solo para eliminar el entorno por completo: poner true, ejecutar "terraform apply" y luego "terraform destroy"
+force_destroy = false

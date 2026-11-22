@@ -1,0 +1,123 @@
+# CI de infraestructura (Opcion B): en cada Pull Request que toque infra/ valida el codigo
+# y muestra el plan de Terraform SIN aplicar nada.
+name: Joomla infra - plan (PR)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "joomla-cicd-obs/infra/**"
+      - ".github/workflows/joomla-infra-plan.yml"
+
+permissions:
+  id-token: write # pedir credenciales temporales a AWS (OIDC)
+  contents: read
+  pull-requests: write # comentar el plan en el PR
+
+concurrency:
+  group: joomla-infra-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.17.0"
+  TF_IN_AUTOMATION: "true"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: joomla-cicd-obs/infra
+
+jobs:
+  plan:
+    name: fmt, validate, tflint, trivy y plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Codigo
+        uses: actions/checkout@v4
+
+      - name: Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Credenciales de AWS (rol de solo lectura)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_PLAN_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=joomla-cicd-obs/infra.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Contrasena del administrador (desde Secrets Manager)
+        run: |
+          PASS=$(aws secretsmanager get-secret-value --secret-id "${{ vars.ADMIN_PASSWORD_SECRET }}" \
+                   --query SecretString --output text)
+          echo "::add-mask::${PASS}"
+          echo "TF_VAR_admin_password=${PASS}" >> "$GITHUB_ENV"
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+
+      - name: tflint (bloquea el PR si falla)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init
+          tflint --recursive --format compact
+
+      - name: trivy (informativo, no bloquea)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: joomla-cicd-obs/infra
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: terraform plan
+        run: |
+          # -lock=false: un plan de PR nunca debe bloquear un apply en curso sobre main
+          terraform plan -input=false -lock=false -no-color \
+            -var-file=env/prod.tfvars -out=tfplan | tee plan.txt
+
+      - name: Resumen del plan
+        if: always()
+        run: |
+          {
+            echo "## Resultado de terraform plan"
+            echo '```'
+            tail -n 60 plan.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comentar el plan en el PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = 'joomla-cicd-obs/infra/plan.txt';
+            let plan = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : 'El plan no se genero: revisar la ejecucion.';
+            if (plan.length > 60000) plan = plan.slice(-60000);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '### terraform plan\n```\n' + plan + '\n```',
+            });

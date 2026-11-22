@@ -1,0 +1,70 @@
+# Elimina la infraestructura (control de costos). Solo manual, exige escribir "destroy"
+# y ademas pasa por la aprobacion del entorno "production".
+name: Joomla infra - destroy (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe "destroy" para confirmar'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: joomla-infra-apply
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.17.0"
+  TF_IN_AUTOMATION: "true"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: joomla-cicd-obs/infra
+
+jobs:
+  destroy:
+    name: terraform destroy
+    if: ${{ inputs.confirm == 'destroy' }}
+    runs-on: ubuntu-latest
+    environment: production # <- aprobacion manual
+    timeout-minutes: 90
+    steps:
+      - name: Codigo
+        uses: actions/checkout@v4
+
+      - name: Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Credenciales de AWS (rol de Terraform)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TERRAFORM_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=joomla-cicd-obs/infra.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Contrasena del administrador (desde Secrets Manager)
+        run: |
+          PASS=$(aws secretsmanager get-secret-value --secret-id "${{ vars.ADMIN_PASSWORD_SECRET }}" \
+                   --query SecretString --output text)
+          echo "::add-mask::${PASS}"
+          echo "TF_VAR_admin_password=${PASS}" >> "$GITHUB_ENV"
+
+      - name: terraform destroy
+        run: terraform destroy -input=false -no-color -auto-approve -var-file=env/prod.tfvars

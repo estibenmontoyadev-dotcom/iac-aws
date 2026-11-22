@@ -1,0 +1,86 @@
+# CD de infraestructura (Opcion B): al hacer merge a main con cambios en infra/ aplica Terraform.
+# El job usa el entorno "production" de GitHub, que EXIGE APROBACION de un revisor antes de ejecutarse.
+name: Joomla infra - apply (main)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "joomla-cicd-obs/infra/**"
+      - ".github/workflows/joomla-infra-apply.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: joomla-infra-apply
+  cancel-in-progress: false # nunca cancelar un apply a medias
+
+env:
+  TF_VERSION: "1.17.0"
+  TF_IN_AUTOMATION: "true"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: joomla-cicd-obs/infra
+
+jobs:
+  apply:
+    name: init, validate, plan y apply
+    runs-on: ubuntu-latest
+    environment: production # <- aprobacion manual
+    timeout-minutes: 90
+    steps:
+      - name: Codigo
+        uses: actions/checkout@v4
+
+      - name: Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Credenciales de AWS (rol de Terraform)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TERRAFORM_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=joomla-cicd-obs/infra.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Contrasena del administrador (desde Secrets Manager)
+        run: |
+          PASS=$(aws secretsmanager get-secret-value --secret-id "${{ vars.ADMIN_PASSWORD_SECRET }}" \
+                   --query SecretString --output text)
+          echo "::add-mask::${PASS}"
+          echo "TF_VAR_admin_password=${PASS}" >> "$GITHUB_ENV"
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan
+        run: |
+          # Se vuelve a planificar sobre main: el plan del PR pudo quedar desactualizado
+          terraform plan -input=false -no-color -var-file=env/prod.tfvars -out=tfplan
+
+      - name: terraform apply
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: Resultados
+        run: |
+          {
+            echo "## Infraestructura aplicada"
+            echo '```'
+            terraform output
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

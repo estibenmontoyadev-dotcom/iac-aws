@@ -50,3 +50,15 @@ variable "force_destroy" {
   type        = bool
   default     = false
 }
+
+variable "github_owner_id" {
+  description = "ID numerico del propietario en GitHub. GitHub lo incluye en el claim sub del token OIDC (repo:dueno@ID/repo@ID:...). Se consulta con: gh api users/<propietario> --jq .id, o en https://api.github.com/users/<propietario>"
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "ID numerico del repositorio en GitHub (https://api.github.com/repos/<propietario>/<repo>, campo id)"
+  type        = string
+  default     = ""
+}

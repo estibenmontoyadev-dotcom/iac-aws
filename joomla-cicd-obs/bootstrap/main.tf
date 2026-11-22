@@ -9,6 +9,13 @@ locals {
   account_id        = data.aws_caller_identity.current.account_id
   state_bucket_name = "${var.project_name}-${local.account_id}-tfstate"
   repo_full_name    = "${var.github_owner}/${var.github_repo}"
+
+  # GitHub puede emitir el claim "sub" con el formato clasico (repo:dueno/repo:...) o con los IDs numericos
+  # (repo:dueno@ID/repo@ID:...). Los roles aceptan ambos para no depender de ese ajuste de GitHub.
+  sub_prefixes = compact([
+    "repo:${local.repo_full_name}",
+    var.github_owner_id != "" && var.github_repo_id != "" ? "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}" : "",
+  ])
   oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
 
   # Roles que ECS usa y que el pipeline de la aplicacion debe poder "pasar" a la tarea (los crea infra/)
@@ -215,7 +222,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo_full_name}:pull_request"]
+      values   = [for p in local.sub_prefixes : "${p}:pull_request"]
     }
   }
 }
@@ -278,7 +285,7 @@ data "aws_iam_policy_document" "tf_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo_full_name}:environment:${var.github_environment}"]
+      values   = [for p in local.sub_prefixes : "${p}:environment:${var.github_environment}"]
     }
   }
 }
@@ -355,7 +362,7 @@ data "aws_iam_policy_document" "app_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo_full_name}:ref:refs/heads/${var.main_branch}"]
+      values   = [for p in local.sub_prefixes : "${p}:ref:refs/heads/${var.main_branch}"]
     }
   }
 }

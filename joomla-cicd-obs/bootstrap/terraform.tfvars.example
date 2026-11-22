@@ -6,6 +6,10 @@ github_owner = "estibenmontoyadev-dotcom"
 github_repo  = "iac-aws"
 main_branch  = "main"
 
+# IDs numericos que GitHub incluye en el token OIDC (consultar en https://api.github.com/users/<propietario> y /repos/<propietario>/<repo>)
+github_owner_id = ""
+github_repo_id  = ""
+
 # false si la cuenta ya tiene el proveedor OIDC de GitHub (AWS admite solo uno por cuenta)
 create_github_oidc_provider = true
 

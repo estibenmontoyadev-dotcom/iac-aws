@@ -12,3 +12,4 @@ Disallow: /layouts/
 Disallow: /libraries/
 Disallow: /logs/
 Disallow: /tmp/
+# Actualizado por el pipeline de la Actividad 6

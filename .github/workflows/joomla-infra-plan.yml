@@ -83,12 +83,10 @@ jobs:
           tflint --recursive --format compact
 
       - name: trivy (informativo, no bloquea)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          scan-type: config
-          scan-ref: joomla-cicd-obs/infra
-          severity: HIGH,CRITICAL
-          exit-code: "0"
+        continue-on-error: true
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}/joomla-cicd-obs/infra:/work:ro" \
+            aquasec/trivy:0.56.2 config --severity HIGH,CRITICAL --exit-code 0 /work
 
       - name: terraform plan
         run: |

@@ -1,0 +1,14 @@
+# Codigo propio versionado en app/custom: se copia al sitio en cada despliegue.
+User-agent: *
+Disallow: /administrator/
+Disallow: /api/
+Disallow: /bin/
+Disallow: /cache/
+Disallow: /cli/
+Disallow: /includes/
+Disallow: /installation/
+Disallow: /language/
+Disallow: /layouts/
+Disallow: /libraries/
+Disallow: /logs/
+Disallow: /tmp/
